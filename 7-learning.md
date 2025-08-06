@@ -1,183 +1,150 @@
-# Network Latency Prediction with Transformers
+# Network Latency Prediction: Timestamp Context Ablation Study
+
+## Research Question
+**How much does incorporating timestamp information improve network latency prediction accuracy?**
 
 ## Objective
-Train a transformer model to predict network latency between arbitrary node pairs using global network measurement context.
+Train a single transformer model with conditional timestamp masking to compare temporal vs non-temporal predictions using identical architecture and parameters.
 
-## Problem Formulation
+## Methodology
 
-### Input Sequence
+### Input Sequence Structure
 ```
-[SRC_TYPE_1, src_bytes_1..., DST_TYPE_1, dst_bytes_1..., timestamp_emb_1, SUCCESS/FAIL_1, (latency_emb_1), <MEAS_SEP>,
- SRC_TYPE_2, src_bytes_2..., DST_TYPE_2, dst_bytes_2..., timestamp_emb_2, SUCCESS/FAIL_2, (latency_emb_2), <MEAS_SEP>,
- ...,
- SRC_TYPE_target, src_bytes_target..., DST_TYPE_target, dst_bytes_target..., timestamp_emb_target]
+<CONDITION_TOKEN> <RESOLUTION_TOKEN>
+[SRC_TYPE_1, src_bytes_1..., DST_TYPE_1, dst_bytes_1..., timestamp_emb_1, SUCCESS/FAIL_1, latency_emb_1] <MEAS_SEP>
+[SRC_TYPE_2, src_bytes_2..., DST_TYPE_2, dst_bytes_2..., timestamp_emb_2, SUCCESS/FAIL_2, latency_emb_2] <MEAS_SEP>
+...
+[SRC_TYPE_target, src_bytes_target..., DST_TYPE_target, dst_bytes_target..., timestamp_emb_target]
 ```
 
-### Training Targets
-- **Success prediction**: Binary classification at each measurement boundary
-- **Latency prediction**: Regression (only when success is predicted)
-- **Prediction point**: At target measurement position
+### Conditional Ablation Strategy
+- **Condition tokens**: `<TEMPORAL>` and `<NO_TEMPORAL>` control timestamp usage
+- **Resolution tokens**: `<SECOND>`, `<MINUTE>`, `<HOUR>`, `<DAY>` indicate temporal scale
+- **Training**: Model learns when to use temporal information based on explicit tokens
+- **Evaluation**: Same model tested with both conditions to isolate temporal contribution
 
-### Sequence Parameters
-- **Context window**: 128 measurements (reduced for memory efficiency)
-- **IPv4 sequence**: 11 tokens per measurement (5 src + 5 dst + timestamp + status + optional latency + separator)
-- **IPv6 sequence**: 35 tokens per measurement (17 src + 17 dst + timestamp + status + optional latency + separator)
-- **Maximum sequence length**: ~1400 tokens (128 × 11 for IPv4)
-- **Prediction horizon**: Next measurement for given IP pair
+### Prediction Tasks
+- **Success prediction**: Will the target measurement succeed? (`sent == rcvd`)
+- **Latency regression**: Predicted latency value (if successful)
 
-## Model Architecture (50M Parameters)
+## Dataset
 
-### Token & Value Representation
-- **Discrete vocabulary**: 261 tokens (IPv4_TYPE, IPv6_TYPE, 256 byte values, SUCCESS, FAIL, MEAS_SEP)
-- **IP encoding**: 
-  - IPv4: `[IPv4_TYPE, b1, b2, b3, b4]` (5 tokens)
-  - IPv6: `[IPv6_TYPE, b1, b2, ..., b16]` (17 tokens)
-- **Continuous values**:
-  - Timestamp: Normalized within sequence window, linear projection to embedding space
-  - Latency: Log-scaled then normalized, linear projection to embedding space
-- **Sequence boundaries**: MEAS_SEP token separates individual measurements
+### Scale & Structure
+- **Size**: 483GB, 964 parquet files, 27.2 billion ping measurements
+- **Timespan**: 1 week continuous measurements (0.3s average intervals)
+- **Network**: ~20,000 probe nodes measuring latency to multiple destinations
+- **File path**: `data/ping_super_optimized_fixed/part_0001.parquet` through `part_0964.parquet`
 
-### Hybrid Embedding Architecture
-- **Token embedding**: nn.Embedding(261, 192) for discrete tokens
-- **Timestamp projection**: nn.Linear(1, 192) for normalized timestamps
-- **Latency projection**: nn.Linear(1, 192) for log-scaled latencies
-- **Combination strategy**: Add token, timestamp, and latency embeddings at appropriate positions
-- **Positional encoding**: Sinusoidal encoding for sequence order
+### Schema
+```
+prb_id: uint32          # Probe identifier
+ts: int64               # Unix timestamp
+sent: uint8             # Packets sent
+rcvd: uint8             # Packets received
+avg: float32            # Average latency (ms) - target variable
+rtt_1,2,3: float32      # Individual round-trip times
+dst_is_ipv6: bool       # Destination IP version
+dst_ipv4_int: uint32    # Destination IPv4 as integer
+dst_ipv6_bytes: binary  # Destination IPv6 as bytes
+src_is_ipv6: bool       # Source IP version
+src_ipv4_int: uint32    # Source IPv4 as integer
+src_ipv6_bytes: binary  # Source IPv6 as bytes
+dst_addr_display: str   # Human-readable destination IP
+src_addr_display: str   # Human-readable source IP
+```
 
-### Transformer Architecture
-- **Type**: Decoder-only (causal attention like GPT)
-- **Layers**: 6 transformer decoder layers
-- **Hidden dimension**: 768
-- **Attention heads**: 12
-- **Attention mask**: Causal mask preventing attention to future measurements
-- **Total parameters**: ~50M
+### Characteristics
+- **Latency**: Mean 92ms, std 98ms, range -1ms to 51,083ms
+- **Success rate**: ~95% (sent == rcvd)
+- **Node activity**: Highly skewed (1 to 1.25M measurements per probe)
 
-### Multi-Task Output Heads
-- **Success classifier**: nn.Linear(192, 2) → [fail_prob, success_prob]
-- **Latency regressor**: nn.Linear(192, 1) → predicted latency value
-- **Training loss**: α × BCE(success) + β × MSE(latency | success)
-- **Loss weights**: α = 1.0, β = 1.0 (balanced multi-task learning)
+## Sampling Strategy
 
-## Training Strategy
+### Multi-Resolution Temporal Windows
+Extract temporal patterns at multiple scales:
 
-### Data Preparation
-1. Extract overlapping sequences from parquet files
-2. Sort by timestamp globally
-3. Create training pairs with various prediction horizons
+- **Second-level**: 10s windows, 1s stride (micro-bursts)
+- **Minute-level**: 5min windows, 30s stride (load patterns)  
+- **Hour-level**: 2h windows, 15min stride (daily cycles)
+- **Day-level**: 1day windows, 4h stride (weekly patterns)
 
-### Hardware Requirements
-- **Target**: Single A100 40GB GPU
-- **Training time**: 2 hours maximum
-- **Memory usage**: ~4-5GB GPU memory
+### Source Node Filtering
+Train only on probes with sufficient temporal context:
+- **Minimum**: ≥20 measurements and ≥5 destinations per probe
+- **Coverage**: ~60% of dataset from high-quality nodes
+
+### Adaptive Training
+- **Duration**: Stop after time limit (6-48h) or loss convergence
+- **Rationale**: IP structure enables efficient learning of network topology
+
+## Model Architecture
+
+### Token Representation (~57M Parameters)
+- **Vocabulary**: 267 tokens (IP bytes, condition/resolution tokens, separators)
+- **IP encoding**: IPv4 as 4 bytes, IPv6 as 16 bytes
+- **Continuous values**: Timestamps and latencies projected to embedding space
+- **Architecture**: 6-layer decoder-only transformer (768 dim, 12 heads)
 
 ### Training Configuration
-- **Dataset**: 50% sample (3-4B measurements) from 1 week
-- **Batch size**: 512-1024
-- **Learning rate**: 1e-4 with cosine decay and warmup
-- **Optimization**: AdamW with gradient clipping
+- **Hardware**: Single A100 40GB (~6GB memory usage)
+- **Batch size**: 64-128 sequences (dynamic based on length)
+- **Optimization**: AdamW with gradient clipping, cosine decay
+- **Loss**: Multi-task BCE(success) + MSE(latency | success)
 
-### Training Configuration
-- **Data sampling**: 50% random sample from 1 week (~3-4B measurements)
-- **Sequence creation**: Sliding window with 50% overlap
-- **Failed ping definition**: sent ≠ rcvd OR avg ≤ 0 OR avg > 10000ms
-- **Batch strategy**: Dynamic batching with max 8192 tokens per batch
+## Evaluation
 
-### Training Objectives & Monitoring
-- **Primary loss**: Hybrid success classification + conditional latency regression
-- **Key metrics**: 
-  - Success accuracy, F1-score
-  - Latency MAE, RMSE
-  - Latency accuracy within ±10ms, ±50ms thresholds
-  - Attention entropy (to detect attention collapse)
+### Data Splits
+- **Training**: 70% of probes (days 1-5)
+- **Validation**: Training probes (day 6)
+- **Testing**: 30% held-out probes (day 7)
 
-### Evaluation Strategy
-- **Temporal split**: Days 1-5 train, day 6 validation, day 7 test
-- **Node generalization**: Test on unseen IP pairs
-- **Baseline comparisons**: 
-  - Persistence model (last observed latency)
-  - Moving average (7-measurement window)
-  - Linear regression on recent measurements
-- **Success criteria**:
-  - Success prediction accuracy >85%
-  - Latency MAE <20ms for 5-minute predictions
-  - >60% of predictions within ±10ms of actual
+### Metrics
+- **Primary**: Δ MAE and Δ accuracy between temporal/non-temporal conditions
+- **Baselines**: Persistence, moving average, linear regression
+- **Analysis**: Multi-scale temporal benefits, network topology effects
 
-## Evaluation Metrics
+### Statistical Testing
+Confidence intervals and significance tests for temporal improvements across different:
+- Time scales (second/minute/hour/day)
+- Network characteristics (probe types, IP similarities)
+- Traffic patterns (load levels, geographic factors)
 
-### Prediction Quality
-- RMSE vs prediction horizon (1min, 5min, 15min, 60min)
-- Percentage within ±X ms of actual latency
-- Baseline comparison: persistence, moving average
+## Expected Outcomes
 
-### Interpretability Analysis
-- **Attention patterns**: Which context measurements influence predictions
-- **IP byte importance**: How model processes IP address structure
-- **Temporal dependencies**: Effective context window analysis
-- **Geographic correlations**: Attention weights vs network topology
+### Hypotheses
+1. **Network structure learning**: Model efficiently learns IP topology patterns
+2. **Scale-dependent benefits**: Temporal context helps more at certain time scales
+3. **Conditional improvement**: Benefits vary with network characteristics
 
-## Expected Insights & Research Value
+### Research Value
+- **Empirical evidence**: Multi-scale temporal analysis of network latency prediction
+- **Practical guidance**: Inform network monitoring system temporal feature decisions
+- **Methodological contribution**: Condition-token ablation for network modeling
 
-### Network Predictability Analysis
-- **Upper bound assessment**: Maximum achievable prediction accuracy with full network visibility
-- **Temporal patterns**: How far into the future can network latency be reliably predicted?
-- **Context dependencies**: Which measurements in the sequence are most informative for prediction?
+## Technical Implementation
 
-### Learned Network Representations
-- **IP address structure**: How does the model process and relate different network addresses?
-- **Failure pattern recognition**: What network conditions precede measurement failures?
-- **Attention patterns**: Which context measurements influence predictions most strongly?
+### Data Pipeline
+```python
+def create_training_data(target_hours=12):
+    good_probes = filter_probes_by_activity()
+    
+    for resolution in ['second', 'minute', 'hour', 'day']:
+        for probe in good_probes:
+            sequences = extract_temporal_windows(probe, resolution)
+            for seq in sequences:
+                yield add_condition_tokens(seq, resolution)
+    
+    if training_time_exceeded(target_hours) or loss_plateaued():
+        break
+```
 
-### Scientific Contributions
-- **Modelability benchmark**: Establish performance ceiling for network latency prediction
-- **Feature importance**: Quantify the value of different types of network context
-- **Failure prediction**: Demonstrate feasibility of proactive network monitoring
+### Monitoring
+- **Real-time**: TensorBoard logging
+- **Validation**: Condition token effectiveness monitoring  
+- **Checkpointing**: Hourly saves for recovery
 
-## Implementation Plan
+## Success Criteria
 
-### Phase 1: Data Pipeline Development
-- **Streaming processing**: Process parquet files sequentially to manage memory
-- **Preprocessing pipeline**: 
-  - Convert IP addresses to byte sequences
-  - Normalize timestamps within sequence windows
-  - Log-scale and normalize latency values
-  - Identify failed pings using defined criteria
-- **Sequence generation**: Sliding window approach with overlap
-- **Dynamic batching**: Pack sequences efficiently to maximize GPU utilization
+**Minimal**: Clear quantification of temporal benefit with statistical significance.
 
-### Phase 2: Model Implementation
-- **Hybrid architecture**: Implement mixed token embedding + continuous value projection
-- **Causal transformer**: Decoder-only architecture with proper attention masking
-- **Multi-task heads**: Separate success classification and latency regression outputs
-- **Training infrastructure**: 
-  - Gradient clipping for stability
-  - Learning rate warmup and cosine decay
-  - Model checkpointing with early stopping
-  - Weights & Biases integration for monitoring
-
-### Phase 3: Training & Evaluation
-- **Training execution**: 2-hour training run on A100 40GB with progress monitoring
-- **Model analysis**:
-  - Attention pattern visualization (which context measurements matter most)
-  - IP byte importance analysis (how model processes address structure)
-  - Temporal dependency analysis (effective context window)
-- **Performance evaluation**: Comprehensive comparison against baseline methods
-- **Scientific insights**: Network predictability patterns and learned representations
-
-## Success Criteria & Risk Mitigation
-
-### Technical Success Metrics
-- **Prediction accuracy**: Latency MAE <20ms for next measurement prediction
-- **Success classification**: >85% accuracy in predicting ping success/failure  
-- **Generalization**: Performance maintained on unseen IP pairs (temporal holdout)
-- **Efficiency**: Training completes within 2-hour target on single A100
-
-### Scientific Success Metrics
-- **Interpretability**: Attention patterns reveal meaningful network relationships
-- **Predictability bounds**: Establish quantitative limits of network latency forecasting
-- **Context analysis**: Identify optimal sequence length for prediction tasks
-
-### Risk Mitigation Strategies
-- **Memory overflow**: Dynamic batching with token limits, gradient checkpointing if needed
-- **Training instability**: Gradient clipping, learning rate warmup, early stopping
-- **Poor convergence**: Learning rate tuning, architecture adjustments (fewer layers if needed)
-- **Insufficient data quality**: Fallback to simpler regression baseline if transformer underperforms
+**Ideal**: Understanding of when, where, and at what scales temporal context improves network prediction, with practical recommendations for monitoring systems.

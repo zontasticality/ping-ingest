@@ -107,37 +107,39 @@ def generate_sequences(probe_data):
 - **Parameters**: ~25M total (reduced due to shorter sequences)
 
 ### Embedding Strategy
-```python
-class HybridEmbedding(nn.Module):
-    def __init__(self):
-        self.token_embedding = nn.Embedding(262, 512)  # Discrete tokens (IPv4-only)
-        self.timestamp_projection = nn.Linear(1, 512)  # Unix timestamp
-        self.latency_projection = nn.Linear(1, 512)    # Latency value
-        self.positional_encoding = SinusoidalPositionalEncoding(512)
-    
-    def forward(self, tokens, timestamps, latencies, positions):
-        # Project all to same 512-dim space
-        token_emb = self.token_embedding(tokens)
-        time_emb = self.timestamp_projection(timestamps.unsqueeze(-1))  
-        latency_emb = self.latency_projection(latencies.unsqueeze(-1))
-        pos_emb = self.positional_encoding(positions)
-        
-        # Combine embeddings (timestamps/latencies only at appropriate positions)
-        combined = token_emb + pos_emb
-        combined[timestamp_positions] += time_emb[timestamp_positions]
-        combined[latency_positions] += latency_emb[latency_positions]
-        
-        return combined
-```
+
+**Conditional Input Construction**:
+
+The model receives different input sequences based on the condition token:
+
+- **`<TEMPORAL>` sequences**: Include timestamp embeddings at each measurement position
+  ```
+  [CONDITION_TOKEN, src_bytes..., dst_bytes..., SUCCESS/FAIL, timestamp_emb, latency_emb, MEAS_SEP, ...]
+  ```
+
+- **`<NO_TEMPORAL>` sequences**: Exclude timestamp embeddings entirely  
+  ```
+  [CONDITION_TOKEN, src_bytes..., dst_bytes..., SUCCESS/FAIL, latency_emb, MEAS_SEP, ...]
+  ```
+
+**Embedding Components**:
+- **Token embeddings**: 262-token vocabulary (bytes, success/fail, separators, condition tokens) → 512 dims
+- **Timestamp projections**: Unix timestamps → 512 dims (only in `<TEMPORAL>` sequences)
+- **Latency projections**: Latency values → 512 dims (present in both conditions)
+- **Positional encoding**: Maintains sequence position information independent of content
+
+The model learns through training to make predictions based on available information - with temporal context when the `<TEMPORAL>` token indicates it's available, and without when `<NO_TEMPORAL>` indicates temporal information is absent from the sequence.
 
 ### Output Heads
 - **Success classifier**: `nn.Linear(512, 2)` → [FAIL_prob, SUCCESS_prob]
 - **Latency regressor**: `nn.Linear(512, 1)` → predicted latency
 - **Loss function**: `BCE(success) + MSE(latency | success)`
 
-### Training Configuration (IPv4-Optimized)
-- **Hardware**: Single A100 40GB (~3GB memory usage)
-- **Batch size**: 128-256 sequences (larger due to shorter sequences)
+### Training Configuration (Random Sampling)
+- **Sampling Strategy**: Random sampling from 26.2B measurements rather than full dataset training
+- **Training Data**: Dynamically sample sequences from high-quality probes during training
+- **Hardware**: Single A100 40GB (4-8GB memory usage with random sampling)
+- **Batch size**: 128-256 sequences 
 - **Optimizer**: AdamW with gradient clipping
 - **Learning rate**: 1e-4 with cosine decay and warmup
 
@@ -179,29 +181,22 @@ Compare model performance under both conditions:
 
 ## Implementation
 
-### Data Pipeline (IPv4-Only)
-```python
-def train_model(target_hours=12):
-    model = LatencyTransformer()
-    
-    # Filter to high-quality probes with IPv4-only measurements
-    good_probes = get_probes_with_sufficient_ipv4_data()
-    
-    start_time = time.time()
-    for probe_id in good_probes:
-        # Load and filter to IPv4-only measurements
-        probe_data = load_probe_data_ipv4_only(probe_id)
-        
-        for condition, sequence in generate_sequences(probe_data):
-            batch = create_batch(condition, sequence)
-            loss = train_step(model, batch)
-            
-            if time.time() - start_time > target_hours * 3600:
-                break
-                
-        if loss_converged() or time_exceeded():
-            break
-```
+### Data Pipeline (Random Sampling)
+
+**Dynamic Sampling Approach**:
+- **Probe sampling**: Randomly select from ~60% high-quality probes each batch
+- **Sequence sampling**: Generate random temporal windows from selected probes
+- **Condition balancing**: Ensure 50/50 split between `<TEMPORAL>` and `<NO_TEMPORAL>` sequences
+- **Memory efficiency**: Stream data on-demand rather than loading entire dataset
+
+**Training Loop**:
+1. Sample random subset of probes for current batch
+2. Generate sequences of varying lengths (20-128 measurements) from probe data
+3. Create both `<TEMPORAL>` and `<NO_TEMPORAL>` versions of each sequence
+4. Train model on batch, monitoring condition-specific performance
+5. Continue until convergence or time limit (6-48 hours)
+
+This approach allows the model to see diverse temporal patterns across the network without requiring full dataset processing, enabling faster iteration and generalization testing.
 
 ### Monitoring
 - **TensorBoard**: Real-time loss and metric tracking

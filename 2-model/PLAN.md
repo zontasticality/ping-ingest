@@ -4,38 +4,45 @@ Train a decoder-only transformer
  - Written in JAX + Equinox + Heliax so it is comprehensible. Highly modular across multiple files and well-commented.
  - Transformer should learn various associations between ips and latency, either predicting latency or ip.
 
+## Tokenization
+
 The token structure is as follows:
 ```rust
 enum Token {
-	MeasurementStart, // denotes a measurement start 
-	MeasurementEnd, // denotes a measurement end
+	MeasurementStart, // denotes a measurement start
 	SrcIpStart, // Marks a src ip start
 	DestIpStart, // Marks a dest ip start
 	Ipv4Start, // Marks an ipv4 start
 	Ipv6Start, // marks an Ipv6 start
-	Short(u16), // encodes a 2-byte sequence as a single token. (for ip addrs, 2 for v4, 8 for v6)
-	Number(f64), // encodes an arbitrary floating point number (can be a latency, bandwidth)
-	Time(u64), // encodes a time, focusing non-log embeddings.
-	LatencyStart,
-	Latency(u64), // Represents latency measured in millis, log-scale encoded using a separate learned matrix
-	ThroughputStart,
-	Throughput(u64), // Represents bandwidth measured in bytes/second, log-scale, encoded using a learned matrix
-	TimestampStart,
-	Timestamp(u64), // Represents the timestamp, also encoded via fourier embedding
+	LatencyStart, // marks a latency measurement start
+	ThroughputStart, // marks a throughput measurement start
+	TimestampStart, // marks a timestamp start
+
+	// unified bytes token to represent everything from ip addresses to timestamps to exponents
+	Byte0,
+	// {...}
+	Byte255,
 }
 ```
 
+### Token Format
+
 Dataset is randomly sampled to get a list of measurements sorted by timestamp.
 Each measurement has the following format:
- - `<Ip> := <Ipv4Start><Short><Short>|<Ipv6Start> 8*<Short>`
+ - `<U8> := <Byte0> | <Byte1> | ... | <Byte255>`
+ - `<Ip> := (<Ipv4Start>4*<U8>) | (<Ipv6Start> 16*<U8>)`
  - `<SrcIp> := <SrcIpStart><Ip>`
  - `<DestIp> := <DestIpStart><Ip>`
- - `<MeasurementStart>` // then some random ordering of SrcIp, DestIp, and LatencyStart, optionally TimestampStart and ThroughputStart
+ - 
+ - `<PositiveFloat> := <U8> <U8>` // encodes exponent, then mantissa, each as a single byte.
+ - `<Latency> := <LatencyStart><PositiveFloat>`
+ - `<Throughput> := <ThroughputStart><PositiveFloat>`
+ - `<Timestamp> := 8*<u8>` // Encodes timestamp big-endian (should be milliseconds since unix epoch)
+ - `<Measurement> := <MeasurementStart> permutations(<SrcIP>, <DestIp>, <Latency>, <Throughput>, <Timestamp>)`
 
-TODO: Timestamp-based positional embedding for measurements
+### Rationale
 
-Train the transformer on as much of the dataset as possible.
-The randomization of measurement order now means the transformer should have learned various prediction modes:
+The randomization of measurement properties within each measurement now means the causal decoder-only transformer needs to learn various prediction modes, e.g.:
  - Src+Dst -> Lat (latency prediction)
  - Src+Lat -> Dst (node within some latency range)
  - PartialIp -> Ip (allocation structure of IPs)

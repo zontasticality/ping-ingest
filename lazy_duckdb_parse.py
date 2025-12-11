@@ -3,13 +3,11 @@ import os
 import glob
 import time
 
-# Configuration
 INPUT_DIR = "data/bz2_ping"
 OUTPUT_DIR = "data/parquet_ping"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-# Define the explicit schema based on our previous findings
-# This allows DuckDB to skip the expensive "type inference" scan
+# Explicit Schema (Faster & Safer)
 SCHEMA_DEF = {
     "msm_id": "BIGINT",
     "prb_id": "BIGINT",
@@ -34,76 +32,44 @@ SCHEMA_DEF = {
     "mver": "VARCHAR",
     "lts": "BIGINT",
     "group_id": "BIGINT",
-    "result": "STRUCT(x VARCHAR)[ ]",  # Only keeping enough structure to extract errors
+    "result": "STRUCT(x VARCHAR)[ ]",
 }
 
 
 def convert_to_parquet(db_con, input_path):
     filename = os.path.basename(input_path)
-    # Extract date from filename if possible for partitioning
-    # Assuming format: ping-YYYY-MM-DD...
-    # If not consistent, we can skip partitioning or use file modification time
-    try:
-        # Simple string parsing assuming "ping-2025-11-11" format
-        date_part = filename.split("ping-")[1][:10]
-    except:
-        date_part = "misc"
-
     output_path = os.path.join(
         OUTPUT_DIR, f"{filename.replace('.json.bz2', '')}.parquet"
     )
 
-    print(f"Processing {filename} -> {output_path}...")
+    print(f"Processing {filename}...")
     start = time.time()
 
     query = f"""
     COPY (
         SELECT 
-            -- 1. SORT KEYS
-            msm_id,
-            dst_addr,
+            -- 1. TIME (Primary Sort Key now)
             to_timestamp(timestamp) as event_time,
             
-            -- 2. METRICS
-            min as rtt_min,
-            avg as rtt_avg,
-            max as rtt_max,
-            sent,
-            rcvd,
-            dup,
-            size,
-            ttl,
+            -- 2. KEYS
+            msm_id, dst_addr, prb_id,
             
-            -- 3. ERROR EXTRACTION
-            -- (DuckDB list lambda)
-            len(list_filter(
-                list_transform(result, item -> item.x), 
-                x -> x IS NOT NULL
-            )) as packet_error_count,
-
-            -- 4. METADATA
-            prb_id,
-            src_addr,
-            "from" as from_addr,
-            dst_name,
-            proto,
-            af as ip_version,
-            fw as firmware,
-            mver as version,
-            step,
-            lts,
-            group_id,
+            -- 3. METRICS
+            min as rtt_min, avg as rtt_avg, max as rtt_max,
+            sent, rcvd, dup, size, ttl,
             
-            -- 5. PARTITION COLUMN (Optional but recommended)
-            '{date_part}' as capture_date
+            -- 4. ERRORS (Connection Tails)
+            len(list_filter(list_transform(result, item -> item.x), x -> x IS NOT NULL)) as packet_error_count,
 
-        FROM read_json('{input_path}', 
-            columns={SCHEMA_DEF}, 
-            format='newline_delimited'
-        )
+            -- 5. METADATA
+            src_addr, "from" as from_addr, dst_name, proto, af as ip_version,
+            fw as firmware, mver as version, step, lts, group_id
+
+        FROM read_json('{input_path}', columns={SCHEMA_DEF}, format='newline_delimited')
         
-        -- SORTING FOR COMPRESSION & CLUSTERING
-        ORDER BY msm_id, dst_addr, event_time
+        -- CHANGED: Sort by Time first.
+        -- This ensures the parquet file is optimized for temporal queries.
+        ORDER BY event_time ASC, msm_id
     ) 
     TO '{output_path}' 
     (FORMAT 'PARQUET', CODEC 'ZSTD', ROW_GROUP_SIZE 100000);
@@ -111,28 +77,17 @@ def convert_to_parquet(db_con, input_path):
 
     try:
         db_con.execute(query)
-        elapsed = time.time() - start
-        print(f"Done in {elapsed:.2f}s")
+        print(f"  -> Done in {time.time() - start:.2f}s")
     except Exception as e:
-        print(f"FAILED {filename}: {e}")
+        print(f"  -> FAILED: {e}")
 
 
-# Main execution loop
 if __name__ == "__main__":
-    # Use an on-disk DB for the conversion process to handle spillover if needed
-    # though strictly speaking, COPY uses streaming so memory shouldn't spike.
-    con = duckdb.connect("converter.db")
-
-    # Get list of bz2 files
-    print(os.listdir("data"))
+    # Ingestion doesn't need huge memory, it streams.
+    con = duckdb.connect()
+    print(os.listdir("data/bz2_ping"))
     files = sorted(glob.glob(os.path.join(INPUT_DIR, "ping-*")))
-
-    print(f"Found {len(files)} files.")
-
+    print(files)
     for f in files:
         convert_to_parquet(con, f)
-
     con.close()
-    # cleanup temp db
-    if os.path.exists("converter.db"):
-        os.remove("converter.db")

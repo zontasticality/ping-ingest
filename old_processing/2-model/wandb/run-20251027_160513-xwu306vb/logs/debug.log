@@ -1,0 +1,26 @@
+2025-10-27 16:05:13,360 INFO    MainThread:96764 [wandb_setup.py:_flush():81] Current SDK version is 0.22.2
+2025-10-27 16:05:13,360 INFO    MainThread:96764 [wandb_setup.py:_flush():81] Configure stats pid to 96764
+2025-10-27 16:05:13,361 INFO    MainThread:96764 [wandb_setup.py:_flush():81] Loading settings from /home/zyansheep/.config/wandb/settings
+2025-10-27 16:05:13,361 INFO    MainThread:96764 [wandb_setup.py:_flush():81] Loading settings from /home/zyansheep/Projects/ping-ingest/2-model/wandb/settings
+2025-10-27 16:05:13,361 INFO    MainThread:96764 [wandb_setup.py:_flush():81] Loading settings from environment variables
+2025-10-27 16:05:13,361 INFO    MainThread:96764 [wandb_init.py:setup_run_log_directory():705] Logging user logs to /home/zyansheep/Projects/ping-ingest/2-model/wandb/run-20251027_160513-xwu306vb/logs/debug.log
+2025-10-27 16:05:13,361 INFO    MainThread:96764 [wandb_init.py:setup_run_log_directory():706] Logging internal logs to /home/zyansheep/Projects/ping-ingest/2-model/wandb/run-20251027_160513-xwu306vb/logs/debug-internal.log
+2025-10-27 16:05:13,361 INFO    MainThread:96764 [wandb_init.py:init():832] calling init triggers
+2025-10-27 16:05:13,361 INFO    MainThread:96764 [wandb_init.py:init():837] wandb.init called with sweep_config: {}
+config: {'learning_rate': 0.02, 'architecture': 'CNN', 'dataset': 'CIFAR-100', 'epochs': 10, '_wandb': {}}
+2025-10-27 16:05:13,361 INFO    MainThread:96764 [wandb_init.py:init():880] starting backend
+2025-10-27 16:05:13,582 INFO    MainThread:96764 [wandb_init.py:init():883] sending inform_init request
+2025-10-27 16:05:13,588 INFO    MainThread:96764 [wandb_init.py:init():891] backend started and connected
+2025-10-27 16:05:13,589 INFO    MainThread:96764 [wandb_init.py:init():961] updated telemetry
+2025-10-27 16:05:13,594 INFO    MainThread:96764 [wandb_init.py:init():985] communicating run to backend with 90.0 second timeout
+2025-10-27 16:05:14,019 INFO    MainThread:96764 [wandb_init.py:init():1036] starting run threads in backend
+2025-10-27 16:05:14,052 INFO    MainThread:96764 [wandb_run.py:_console_start():2509] atexit reg
+2025-10-27 16:05:14,052 INFO    MainThread:96764 [wandb_run.py:_redirect():2357] redirect: wrap_raw
+2025-10-27 16:05:14,053 INFO    MainThread:96764 [wandb_run.py:_redirect():2426] Wrapping output streams.
+2025-10-27 16:05:14,053 INFO    MainThread:96764 [wandb_run.py:_redirect():2449] Redirects installed.
+2025-10-27 16:05:14,059 INFO    MainThread:96764 [wandb_init.py:init():1076] run started, returning control to user process
+2025-10-27 16:05:14,062 INFO    MainThread:96764 [wandb_run.py:_finish():2275] finishing run zontasticality-university-of-massachusetts-amherst/ping-model/xwu306vb
+2025-10-27 16:05:14,063 INFO    MainThread:96764 [wandb_run.py:_atexit_cleanup():2474] got exitcode: 0
+2025-10-27 16:05:14,063 INFO    MainThread:96764 [wandb_run.py:_restore():2456] restore
+2025-10-27 16:05:14,063 INFO    MainThread:96764 [wandb_run.py:_restore():2462] restore done
+2025-10-27 16:05:14,769 INFO    MainThread:96764 [wandb_run.py:_footer_sync_info():3872] logging synced files

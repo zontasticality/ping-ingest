@@ -1,0 +1,17 @@
+{
+  "os": "Linux-6.12.51-x86_64-with-glibc2.40",
+  "python": "CPython 3.13.3",
+  "startedAt": "2025-10-27T20:05:13.357738Z",
+  "program": "/home/zyansheep/Projects/ping-ingest/2-model/model.py",
+  "codePath": "2-model/model.py",
+  "codePathLocal": "model.py",
+  "git": {
+    "remote": "https://github.com/zontasticality/ping-ingest.git",
+    "commit": "a48d5308a2cb5d8c172d2784eb27021958eaa5cf"
+  },
+  "email": "zontasticality@proton.me",
+  "root": "/home/zyansheep/Projects/ping-ingest/2-model",
+  "host": "isomorph",
+  "executable": "/home/zyansheep/Projects/ping-ingest/2-model/.venv/bin/python",
+  "writerId": "dn87c1drsqh5i1idbmtk6wnh8fake7b4"
+}

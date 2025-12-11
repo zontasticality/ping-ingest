@@ -1,0 +1,15 @@
+2025-10-27 16:00:02,517 INFO    MainThread:95454 [wandb_setup.py:_flush():81] Current SDK version is 0.22.2
+2025-10-27 16:00:02,517 INFO    MainThread:95454 [wandb_setup.py:_flush():81] Configure stats pid to 95454
+2025-10-27 16:00:02,517 INFO    MainThread:95454 [wandb_setup.py:_flush():81] Loading settings from /home/zyansheep/.config/wandb/settings
+2025-10-27 16:00:02,517 INFO    MainThread:95454 [wandb_setup.py:_flush():81] Loading settings from /home/zyansheep/Projects/ping-ingest/2-model/wandb/settings
+2025-10-27 16:00:02,517 INFO    MainThread:95454 [wandb_setup.py:_flush():81] Loading settings from environment variables
+2025-10-27 16:00:02,518 INFO    MainThread:95454 [wandb_init.py:setup_run_log_directory():705] Logging user logs to /home/zyansheep/Projects/ping-ingest/2-model/wandb/run-20251027_160002-yo09l07q/logs/debug.log
+2025-10-27 16:00:02,518 INFO    MainThread:95454 [wandb_init.py:setup_run_log_directory():706] Logging internal logs to /home/zyansheep/Projects/ping-ingest/2-model/wandb/run-20251027_160002-yo09l07q/logs/debug-internal.log
+2025-10-27 16:00:02,518 INFO    MainThread:95454 [wandb_init.py:init():832] calling init triggers
+2025-10-27 16:00:02,518 INFO    MainThread:95454 [wandb_init.py:init():837] wandb.init called with sweep_config: {}
+config: {'learning_rate': 0.02, 'architecture': 'CNN', 'dataset': 'CIFAR-100', 'epochs': 10, '_wandb': {}}
+2025-10-27 16:00:02,518 INFO    MainThread:95454 [wandb_init.py:init():880] starting backend
+2025-10-27 16:00:02,742 INFO    MainThread:95454 [wandb_init.py:init():883] sending inform_init request
+2025-10-27 16:00:02,771 INFO    MainThread:95454 [wandb_init.py:init():891] backend started and connected
+2025-10-27 16:00:02,772 INFO    MainThread:95454 [wandb_init.py:init():961] updated telemetry
+2025-10-27 16:00:02,783 INFO    MainThread:95454 [wandb_init.py:init():985] communicating run to backend with 90.0 second timeout

@@ -1,78 +1,50 @@
 import duckdb
 import os
-import pandas as pd
 
-# Path to your generated training file
 INPUT_FILE = "data/training_set/training_data.parquet"
 
 
-def inspect_column_sizes():
+def check_dst_addr():
     if not os.path.exists(INPUT_FILE):
-        print(f"Error: File not found at {INPUT_FILE}")
+        print(f"Error: {INPUT_FILE} not found.")
         return
 
-    print(f"Inspecting metadata for: {INPUT_FILE}")
     con = duckdb.connect()
 
-    # query explanation:
-    # 1. parquet_metadata reads only the file footer (instant, no matter file size).
-    # 2. We sum the chunk sizes for every row group to get total column weight.
-    query = f"""
-    WITH col_stats AS (
-        SELECT 
-            path_in_schema as column_name,
-            SUM(total_compressed_size) as comp_bytes,
-            SUM(total_uncompressed_size) as uncomp_bytes,
-            -- Calculate compression ratio (Higher is better)
-            CAST(SUM(total_uncompressed_size) AS DOUBLE) / NULLIF(SUM(total_compressed_size), 0) as ratio
-        FROM parquet_metadata('{INPUT_FILE}')
-        GROUP BY path_in_schema
-    )
+    print(f"--- Investigating 'dst_addr' in {INPUT_FILE} ---")
+
+    # 1. Check Sparsity vs Cardinality
+    query_stats = f"""
     SELECT 
-        column_name,
-        -- Convert to MB for readability
-        round(comp_bytes / 1024.0 / 1024.0, 2) as compressed_mb,
-        round(uncomp_bytes / 1024.0 / 1024.0, 2) as uncompressed_mb,
-        round(ratio, 1) as compression_ratio,
-        -- Calculate % of total file size
-        round(comp_bytes * 100.0 / (SELECT SUM(comp_bytes) FROM col_stats), 1) as pct_of_disk
-    FROM col_stats
-    ORDER BY comp_bytes DESC
+        count(*) as total_rows,
+        count(dst_addr) as non_null_rows,
+        count(DISTINCT dst_addr) as unique_destinations,
+        
+        -- Percentage of rows that have a value
+        round(count(dst_addr) * 100.0 / count(*), 2) as population_pct,
+        
+        -- Diversity: If this is low (< 1%), dictionary encoding is doing heavy lifting
+        round(count(DISTINCT dst_addr) * 100.0 / count(*), 4) as distinct_pct
+    FROM '{INPUT_FILE}'
     """
 
-    try:
-        df = con.sql(query).df()
+    stats = con.sql(query_stats).df()
+    print(stats.to_string(index=False))
 
-        # Calculate Totals
-        total_comp = df["compressed_mb"].sum()
-        total_uncomp = df["uncompressed_mb"].sum()
-
-        print(
-            f"\n--- Total File Size: {total_comp:.2f} MB (Uncompressed footprint: {total_uncomp:.2f} MB) ---\n"
-        )
-        print(df.to_string(index=False))
-
-        print("\n--- Analysis & Tips ---")
-        top_col = df.iloc[0]
-        print(
-            f"1. Heaviest Column: '{top_col['column_name']}' takes up {top_col['pct_of_disk']}% of the file."
-        )
-
-        low_ratio = df[df["compression_ratio"] < 2.0]
-        if not low_ratio.empty:
-            print(
-                f"2. Poor Compression: These columns compress poorly (< 2x): {low_ratio['column_name'].tolist()}"
-            )
-            print(
-                "   (Consider dictionary encoding or dropping them if they are high-cardinality strings)"
-            )
-        else:
-            print("2. Compression looks healthy across all columns.")
-
-    except Exception as e:
-        print(f"Error reading metadata: {e}")
-        print("Note: This script requires DuckDB v0.8.0 or newer.")
+    # 2. See the most common values (The Dictionary)
+    print("\n--- Top 10 Destinations (The Dictionary) ---")
+    query_top = f"""
+    SELECT 
+        dst_addr, 
+        count(*) as freq,
+        round(count(*) * 100.0 / (SELECT count(*) FROM '{INPUT_FILE}'), 2) as pct_of_dataset
+    FROM '{INPUT_FILE}'
+    GROUP BY 1
+    ORDER BY 2 DESC
+    LIMIT 10
+    """
+    print(con.sql(query_top).df().to_string(index=False))
 
 
 if __name__ == "__main__":
-    inspect_column_sizes()
+    check_dst_addr()

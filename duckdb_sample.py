@@ -35,32 +35,31 @@ def diagnose_and_sample():
 
     print("\n--- 2. SAMPLING: True Global Random Sequences ---")
 
-    # We create a probability that picks roughly 25 rows out of the total.
-    # P = 25 / Total_Rows. We use slightly higher (50) to be safe and Limit.
     total_rows = stats.iloc[0]["total_rows"]
     if total_rows == 0:
         return
 
-    sample_rate = 100.0 / total_rows  # Target ~100 rows, pick 25
-
-    for i in range(1, 6):
+    for i in range(1, 2):
         print(f"### Random Sequence {i} ###")
 
-        # This query forces a full table scan, ensuring we pick rows from
-        # the start (11th) AND the end (25th) uniformly.
+        # This query forces a full table scan by ordering by random().
+        # This ensures we pick rows from BOTH time periods (Nov 10 and Nov 22) uniformly.
         query = f"""
-        SELECT * FROM (
-            SELECT 
+        WITH random_sample AS (
+            SELECT
                 event_time,
                 msm_id,
                 src_addr,
                 dst_addr,
                 rtt,
-                packet_error_count as err
+                packet_error_count as err,
+                random() as rand
             FROM '{INPUT_FILE}'
-            WHERE random() < {sample_rate} 
+            ORDER BY rand
             LIMIT 25
-        ) 
+        )
+        SELECT event_time, msm_id, src_addr, dst_addr, rtt, err
+        FROM random_sample
         ORDER BY event_time ASC
         """
 

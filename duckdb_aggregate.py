@@ -59,13 +59,13 @@ def generate_random_minimal_sample():
 
     query = f"""
     COPY (
-        SELECT 
+        SELECT
             -- 1. Sequence Context
             msm_id,
-            event_time, 
+            event_time,
 
             -- 2. IP Tokens
-            src_addr,
+            from_addr,
             dst_addr,
             ip_version, 
 

@@ -49,7 +49,7 @@ def diagnose_and_sample():
             SELECT
                 event_time,
                 msm_id,
-                from_addr,
+                src_addr,
                 dst_addr,
                 rtt,
                 packet_error_count as err,
@@ -58,7 +58,7 @@ def diagnose_and_sample():
             ORDER BY rand
             LIMIT 25
         )
-        SELECT event_time, msm_id, from_addr, dst_addr, rtt, err
+        SELECT event_time, msm_id, src_addr, dst_addr, rtt, err
         FROM random_sample
         ORDER BY event_time ASC
         """

@@ -14,7 +14,7 @@ TEMP_DIR = "data/duckdb_tmp"
 os.makedirs(TEMP_DIR, exist_ok=True)
 
 # Target Dataset Size
-TARGET_ROWS = 100_000_000
+TARGET_ROWS = 200_000_000
 
 
 def generate_random_minimal_sample():
@@ -65,7 +65,7 @@ def generate_random_minimal_sample():
             event_time,
 
             -- 2. IP Tokens
-            from_addr,
+            from_addr AS src_addr,
             dst_addr,
             ip_version, 
 

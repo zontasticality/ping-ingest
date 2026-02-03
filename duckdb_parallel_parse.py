@@ -189,7 +189,7 @@ def convert_to_parquet(input_path: str, process_id: int = 0, processors_per_work
         # Configure DuckDB for external sorting (handles large files that don't fit in memory)
         # Use /tmp for sorting (local disk, much faster than network storage)
         con.execute("SET temp_directory='/tmp/duckdb_sort'")
-        con.execute("SET memory_limit='24GB'")  # Use 24GB of 32GB available
+        con.execute("SET memory_limit='24GB'")  # Use 24GB per worker (fits 8 workers in 120GB)
         con.execute("SET preserve_insertion_order=false")  # Faster sorting, order comes from ORDER BY
         print(f"[Worker {process_id}] [{time.strftime('%H:%M:%S')}] Configured: memory_limit=24GB, temp_directory=/tmp/duckdb_sort")
 
@@ -369,6 +369,13 @@ def main(
     already_processed = total_available - len(unprocessed_files)
     print(f"Already processed: {already_processed} files")
     print(f"Remaining to process: {len(unprocessed_files)} files")
+
+    # Print the list of files left to parse
+    if len(unprocessed_files) > 0:
+        print(f"\nFiles left to parse:")
+        for f in sorted(unprocessed_files):
+            print(f"  {os.path.basename(f)}")
+        print()
 
     if len(unprocessed_files) == 0:
         print("All files have already been processed!")
